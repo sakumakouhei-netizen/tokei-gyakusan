@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>手回し時計トレーニング - 時計と時間の学習</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@600;700;800;900&display=swap');
+        
+        body {
+            font-family: 'M PLUS Rounded 1c', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f1f5f9 100%);
+            color: #1e293b;
+            touch-action: manipulation;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        .hour-color { color: #e11d48; } 
+        .min-color { color: #2563eb; }  
+        .hour-bg { background-color: #f43f5e; }
+        .min-bg { background-color: #3b82f6; }
+
+        canvas {
+            touch-action: none;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .badge-locked { filter: grayscale(1) opacity(0.3); }
+
+        /* モーダルのポップインアニメーション */
+        @keyframes modalPop {
+            0% { transform: scale(0.5); opacity: 0; }
+            70% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-modal {
+            animation: modalPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between overflow-hidden p-0 m-0 relative">
+
+    <!-- ヘッダー -->
+    <header class="bg-white/95 backdrop-blur-md text-slate-800 shadow-sm border-b border-sky-100 shrink-0 px-4 py-2">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <div class="bg-gradient-to-tr from-sky-500 to-indigo-600 p-2 rounded-xl text-white shadow-sm">
+                    <i class="fa-solid fa-clock text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-base md:text-lg font-black text-slate-800 tracking-wide">
+                        手回し時計 ＆ タイムライン
+                    </h1>
+                </div>
+            </div>
+            <!-- ごほうびバッジ表示エリア -->
+            <div class="flex items-center gap-2 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                <span class="text-xs font-black text-amber-900">バッジ:</span>
+                <span id="badge-1" class="text-lg badge-locked" title="1問正解">🥉</span>
+                <span id="badge-2" class="text-lg badge-locked" title="3問正解">🥈</span>
+                <span id="badge-3" class="text-lg badge-locked" title="5問正解">🥇</span>
+                <span class="text-xs font-extrabold text-amber-700 ml-1"><span id="score-count">0</span> 問せいかい</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="max-w-6xl mx-auto w-full px-4 py-2 flex-1 flex items-center justify-center overflow-hidden">
+
+        <div class="grid grid-cols-12 gap-4 w-full h-full max-h-[600px] items-stretch">
+
+            <!-- 左エリア（7列）：数直線 ＋ アナログ時計 -->
+            <div class="col-span-7 flex flex-col gap-2 justify-between h-full">
+                
+                <!-- 1. 数直線（タイムライン） -->
+                <div class="bg-white px-4 py-2.5 rounded-2xl shadow-sm border border-slate-200/80 shrink-0">
+                    <div class="flex justify-between items-center mb-1">
+                        <h3 class="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                            <i class="fa-solid fa-ruler-horizontal text-indigo-500"></i>
+                            まっすぐな時間（数直線）
+                        </h3>
+                        <span class="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
+                            ◀ まえ（もどる） | あと（すすむ） ▶
+                        </span>
+                    </div>
+
+                    <div class="w-full overflow-hidden flex items-center justify-center">
+                        <canvas id="timelineCanvas" width="520" height="70" class="w-full h-auto max-h-[70px]"></canvas>
+                    </div>
+                </div>
+
+                <!-- 2. アナログ時計 -->
+                <div class="bg-white px-4 py-3 rounded-2xl shadow-sm border border-slate-200/80 flex-1 flex flex-col items-center justify-between min-h-0">
+                    <div class="w-full bg-sky-50 border border-sky-200 py-1.5 px-3 rounded-xl text-center shrink-0">
+                        <p id="instruction-text" class="text-xs font-extrabold text-sky-900 flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-arrows-spin text-sky-600 text-sm"></i>
+                            <span>長針（青）をドラッグして、正解の時間にあわせよう！</span>
+                        </p>
+                    </div>
+
+                    <div class="relative my-auto cursor-grab active:cursor-grabbing flex items-center justify-center">
+                        <canvas id="clockCanvas" width="260" height="260" class="max-w-full h-auto drop-shadow-md"></canvas>
+                    </div>
+
+                    <div class="flex items-center justify-center gap-4 text-xs font-black shrink-0">
+                        <div class="flex items-center gap-1.5 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                            <span class="w-2.5 h-2.5 rounded-full hour-bg inline-block"></span>
+                            <span class="hour-color text-[11px]">短針（時）</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                            <span class="w-2.5 h-2.5 rounded-full min-bg inline-block"></span>
+                            <span class="min-color text-[11px]">長針（分）</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 右エリア（5列）：問題カード ＋ 操作ボタン ＋ デジタル時計 -->
+            <div class="col-span-5 flex flex-col gap-2 justify-between h-full">
+
+                <!-- 1. 問題出題カード＆設定（難易度＆回答モード切替） -->
+                <div class="bg-gradient-to-br from-indigo-600 to-sky-600 text-white p-3 rounded-2xl shadow-md shrink-0 flex flex-col justify-between">
+                    
+                    <!-- 設定タブ群 -->
+                    <div class="flex flex-col gap-1 mb-1">
+                        <!-- 難易度切り替え -->
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-extrabold text-indigo-100">むずかしさ:</span>
+                            <div class="flex bg-indigo-900/40 p-0.5 rounded-xl border border-white/20 text-[10px] font-bold">
+                                <button id="level-btn-easy" onclick="changeLevel('easy')" class="px-2 py-0.5 rounded-lg bg-white text-indigo-900 font-black shadow-sm transition-all">🌱 かんたん</button>
+                                <button id="level-btn-normal" onclick="changeLevel('normal')" class="px-2 py-0.5 rounded-lg text-white/80 hover:text-white transition-all">🐤 ふつう</button>
+                                <button id="level-btn-hard" onclick="changeLevel('hard')" class="px-2 py-0.5 rounded-lg text-white/80 hover:text-white transition-all">🔥 むずかしい</button>
+                            </div>
+                        </div>
+
+                        <!-- 回答モード切り替え -->
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-extrabold text-indigo-100">こたえかた:</span>
+                            <div class="flex bg-indigo-900/40 p-0.5 rounded-xl border border-white/20 text-[10px] font-bold">
+                                <button id="mode-btn-clock" onclick="changeAnswerMode('clock')" class="px-2 py-0.5 rounded-lg bg-white text-indigo-900 font-black shadow-sm transition-all">🕒 はりをまわす</button>
+                                <button id="mode-btn-input" onclick="changeAnswerMode('input')" class="px-2 py-0.5 rounded-lg text-white/80 hover:text-white transition-all">🔢 すうじでえらぶ</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between items-center my-0.5">
+                        <div id="question-text" class="text-base md:text-lg font-extrabold text-center text-amber-200 leading-snug w-full">
+                            10:15 の 30分前 は なに時なに分？
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 mt-1">
+                        <button onclick="nextQuestion()" class="w-1/3 py-2 bg-white/20 hover:bg-white/30 text-white font-bold text-xs rounded-xl transition-all active:scale-95">
+                            つぎ ↻
+                        </button>
+                        <button onclick="checkAnswer()" class="w-2/3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-circle-check text-base"></i>
+                            こたえあわせ！
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2. デジタル表示 / 入力コントロール -->
+                <div class="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-200/80 text-center shrink-0">
+                    <span id="digital-title" class="text-[10px] font-extrabold text-slate-400 block">いま指している時間</span>
+                    
+                    <!-- 表示モード（針を回す用） -->
+                    <div id="digital-display-view" class="text-2xl md:text-3xl font-black tracking-tight my-0.5 flex items-center justify-center gap-1">
+                        <span id="digital-hour" class="hour-color">10</span>
+                        <span class="text-slate-400 text-xl">時</span>
+                        <span id="digital-min" class="min-color">15</span>
+                        <span class="text-slate-400 text-xl">分</span>
+                    </div>
+
+                    <!-- 入力モード（数字で選ぶ用） -->
+                    <div id="digital-input-view" class="hidden my-1 flex items-center justify-center gap-3">
+                        <!-- 時コントロール -->
+                        <div class="flex flex-col items-center">
+                            <button onclick="adjustInputTime(1, 0)" class="w-10 h-7 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-t-lg font-black text-sm border border-rose-300">▲</button>
+                            <div class="w-14 h-10 bg-rose-50 border-x border-rose-300 flex items-center justify-center text-2xl font-black hour-color">
+                                <span id="input-hour-text">10</span>
+                            </div>
+                            <button onclick="adjustInputTime(-1, 0)" class="w-10 h-7 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-b-lg font-black text-sm border border-rose-300">▼</button>
+                            <span class="text-xs font-bold text-slate-500 mt-0.5">時</span>
+                        </div>
+
+                        <span class="text-2xl font-black text-slate-300 pb-4">:</span>
+
+                        <!-- 分コントロール -->
+                        <div class="flex flex-col items-center">
+                            <div class="flex gap-1">
+                                <button onclick="adjustInputTime(0, 5)" class="w-8 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-t-lg font-black text-xs border border-blue-300">+5</button>
+                                <button onclick="adjustInputTime(0, 1)" class="w-8 h-7 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-t-lg font-black text-xs border border-blue-200">+1</button>
+                            </div>
+                            <div class="w-18 h-10 px-3 bg-blue-50 border-x border-blue-300 flex items-center justify-center text-2xl font-black min-color">
+                                <span id="input-min-text">15</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <button onclick="adjustInputTime(0, -5)" class="w-8 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-b-lg font-black text-xs border border-blue-300">-5</button>
+                                <button onclick="adjustInputTime(0, -1)" class="w-8 h-7 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-b-lg font-black text-xs border border-blue-200">-1</button>
+                            </div>
+                            <span class="text-xs font-bold text-slate-500 mt-0.5">分</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. ボタン操作エリア（時計操作モード時のみ表示） -->
+                <div id="button-control-section" class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200/80 flex-1 flex flex-col justify-between min-h-0">
+                    <h3 class="text-xs font-extrabold text-slate-800 flex items-center gap-1.5 shrink-0">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
+                        ボタンで時間をうごかす
+                    </h3>
+
+                    <div class="flex flex-col gap-2 my-auto">
+                        <!-- 戻すグループ -->
+                        <div>
+                            <div class="text-[10px] font-bold text-rose-600 mb-0.5">◀ 針を左に回す（もどる）</div>
+                            <div class="grid grid-cols-3 gap-1.5">
+                                <button onclick="animateAddMinutes(-5)" class="action-btn py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-black rounded-lg border border-rose-200 transition-all active:scale-95 text-xs">5分</button>
+                                <button onclick="animateAddMinutes(-15)" class="action-btn py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-900 font-black rounded-xl border border-rose-300 transition-all active:scale-95 text-xs">15分</button>
+                                <button onclick="animateAddMinutes(-30)" class="action-btn py-1.5 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-lg shadow-sm transition-all active:scale-95 text-xs">30分</button>
+                            </div>
+                        </div>
+
+                        <!-- 進めるグループ -->
+                        <div>
+                            <div class="text-[10px] font-bold text-blue-600 mb-0.5">▶ 針を右に回す（すすむ）</div>
+                            <div class="grid grid-cols-3 gap-1.5">
+                                <button onclick="animateAddMinutes(5)" class="action-btn py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 font-black rounded-lg border border-blue-200 transition-all active:scale-95 text-xs">5分</button>
+                                <button onclick="animateAddMinutes(15)" class="action-btn py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-900 font-black rounded-xl border border-blue-300 transition-all active:scale-95 text-xs">15分</button>
+                                <button onclick="animateAddMinutes(30)" class="action-btn py-1.5 bg-blue-500 hover:bg-blue-600 text-white font-black rounded-lg shadow-sm transition-all active:scale-95 text-xs">30分</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-1.5 border-t border-slate-100 shrink-0">
+                        <button onclick="resetToStartQuestionTime()" class="action-btn w-full py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-all">
+                            もんだいの最初の時間にもどす
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 数字入力モード用ガイドカード（ボタン操作エリアの代わりに表示） -->
+                <div id="input-mode-guide" class="hidden bg-slate-50 p-4 rounded-2xl border border-slate-200/80 flex-1 flex flex-col items-center justify-center text-center">
+                    <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xl mb-2 font-black">💡</div>
+                    <p class="text-xs font-bold text-slate-700 leading-relaxed">
+                        「時」と「分」のボタンを押して<br>こたえの時間をあわせたら<br>
+                        <span class="text-emerald-600 font-black">【こたえあわせ！】</span> をおしてね！
+                    </p>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- フッター -->
+    <footer class="bg-white/80 border-t border-slate-200 py-1.5 text-center text-[10px] text-slate-500 font-bold shrink-0">
+        特別支援学校高等部向け インタラクティブ時間学習アプリ
+    </footer>
+
+    <!-- 画面中央ポップアップ（正解・不正解モーダル） -->
+    <div id="result-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div id="modal-card" class="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border-4 border-emerald-400 animate-modal">
+            <div id="modal-icon" class="text-6xl mb-2">🎉</div>
+            <h2 id="modal-title" class="text-2xl font-black text-slate-800 mb-1">だいせいかい！</h2>
+            <p id="modal-desc" class="text-sm font-bold text-slate-600 mb-5">すごいね！ぴったり合ってるよ！</p>
+            <button id="modal-btn" onclick="closeModalAndNext()" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl shadow-lg text-base transition-all active:scale-95">
+                つぎの問題へ ▶
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Web Audio API による効果音再生
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playCorrectSound() {
+            initAudio();
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(659.25, now);
+            gain1.gain.setValueAtTime(0.3, now);
+            gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+            osc1.connect(gain1);
+            gain1.connect(audioCtx.destination);
+            osc1.start(now);
+            osc1.stop(now + 0.3);
+
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(830.61, now + 0.15);
+            gain2.gain.setValueAtTime(0.4, now + 0.15);
+            gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.start(now + 0.15);
+            osc2.stop(now + 0.6);
+        }
+
+        function playIncorrectSound() {
+            initAudio();
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.setValueAtTime(220, now + 0.15);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.4);
+        }
+
+        // 難易度別問題データ
+        const questionDatabase = {
+            easy: [
+                { startH: 10, startM: 0,  delta: 30,  text: "10:00 の 30分後 は なに時なに分？" },
+                { startH: 2,  startM: 30, delta: -30, text: "2:30 の 30分前 は なに時なに分？" },
+                { startH: 9,  startM: 15, delta: 15,  text: "9:15 の 15分後 は なに時なに分？" },
+                { startH: 4,  startM: 45, delta: -15, text: "4:45 の 15分前 は なに時なに分？" },
+                { startH: 11, startM: 0,  delta: 15,  text: "11:00 の 15分後 は なに時なに分？" },
+                { startH: 1,  startM: 30, delta: 30,  text: "1:30 の 30分後 は なに時なに分？" },
+                { startH: 8,  startM: 45, delta: -30, text: "8:45 の 30分前 は なに時なに分？" },
+                { startH: 3,  startM: 15, delta: -15, text: "3:15 の 15分前 は なに時なに分？" }
+            ],
+            normal: [
+                { startH: 10, startM: 15, delta: -30, text: "10:15 の 30分前 は なに時なに分？" },
+                { startH: 9,  startM: 45, delta: 30,  text: "9:45 の 30分後 は なに時なに分？" },
+                { startH: 11, startM: 10, delta: -15, text: "11:10 の 15分前 は なに時なに分？" },
+                { startH: 2,  startM: 50, delta: 15,  text: "2:50 の 15分後 は なに時なに分？" },
+                { startH: 8,  startM: 20, delta: -30, text: "8:20 の 30分前 は なに時なに分？" },
+                { startH: 5,  startM: 0,  delta: 20,  text: "5:00 の 20分後 は なに時なに分？" },
+                { startH: 7,  startM: 40, delta: -10, text: "7:40 の 10分前 は なに時なに分？" },
+                { startH: 12, startM: 15, delta: 25,  text: "12:15 の 25分後 は なに時なに分？" },
+                { startH: 6,  startM: 30, delta: -20, text: "6:30 の 20分前 は なに時なに分？" },
+                { startH: 1,  startM: 0,  delta: 45,  text: "1:00 の 45分後 は なに時なに分？" }
+            ],
+            hard: [
+                { startH: 9,  startM: 05, delta: -10, text: "9:05 の 10分前 は なに時なに分？" },
+                { startH: 1,  startM: 30, delta: 45,  text: "1:30 の 45分後 は なに時なに分？" },
+                { startH: 10, startM: 10, delta: -25, text: "10:10 の 25分前 は なに時なに分？" },
+                { startH: 3,  startM: 50, delta: 35,  text: "3:50 の 35分後 は なに時なに分？" },
+                { startH: 8,  startM: 0,  delta: -45, text: "8:00 の 45分前 は なに時なに分？" },
+                { startH: 11, startM: 40, delta: 40,  text: "11:40 の 40分後 は なに時なに分？" },
+                { startH: 2,  startM: 15, delta: -35, text: "2:15 の 35分前 は なに時なに分？" },
+                { startH: 6,  startM: 55, delta: 20,  text: "6:55 の 20分後 は なに時なに分？" },
+                { startH: 12, startM: 05, delta: -20, text: "12:05 の 20分前 は なに時なに分？" },
+                { startH: 4,  startM: 25, delta: 50,  text: "4:25 の 50分後 は なに時なに分？" }
+            ]
+        };
+
+        let currentLevel = 'easy';
+        let answerMode = 'clock'; // 'clock' or 'input'
+        let currentQIndex = 0;
+        let targetAnswerMins = 0;
+        let score = 0;
+        let isCorrectState = false;
+
+        let totalMinutes = 10 * 60 + 15;
+        let startMinutes = 10 * 60 + 15;
+        let inputHour = 10;
+        let inputMin = 0;
+
+        let isDragging = false;
+        let isAnimating = false;
+        let lastAngle = null;
+
+        const clockCanvas = document.getElementById('clockCanvas');
+        const clockCtx = clockCanvas.getContext('2d');
+        const radius = clockCanvas.width / 2;
+
+        const timelineCanvas = document.getElementById('timelineCanvas');
+        const timelineCtx = timelineCanvas.getContext('2d');
+
+        window.onload = function() {
+            setupEvents();
+            loadQuestion(0);
+        };
+
+        function setupEvents() {
+            clockCanvas.addEventListener('mousedown', startDrag);
+            clockCanvas.addEventListener('mousemove', drag);
+            window.addEventListener('mouseup', endDrag);
+
+            clockCanvas.addEventListener('touchstart', startDrag, { passive: false });
+            clockCanvas.addEventListener('touchmove', drag, { passive: false });
+            window.addEventListener('touchend', endDrag);
+        }
+
+        function changeLevel(level) {
+            currentLevel = level;
+            ['easy', 'normal', 'hard'].forEach(l => {
+                const btn = document.getElementById(`level-btn-${l}`);
+                btn.className = (l === level) 
+                    ? "px-2 py-0.5 rounded-lg bg-white text-indigo-900 font-black shadow-sm transition-all"
+                    : "px-2 py-0.5 rounded-lg text-white/80 hover:text-white transition-all";
+            });
+            currentQIndex = 0;
+            loadQuestion(0);
+        }
+
+        function changeAnswerMode(mode) {
+            answerMode = mode;
+            document.getElementById('mode-btn-clock').className = (mode === 'clock') 
+                ? "px-2 py-0.5 rounded-lg bg-white text-indigo-900 font-black shadow-sm transition-all"
+                : "px-2 py-0.5 rounded-lg text-white/80 hover:text-white transition-all";
+            document.getElementById('mode-btn-input').className = (mode === 'input') 
+                ? "px-2 py-0.5 rounded-lg bg-white text-indigo-900 font-black shadow-sm transition-all"
+                : "px-2 py-0.5 rounded-lg text-white/80 hover:text-white transition-all";
+
+            const instruction = document.getElementById('instruction-text');
+            const digitalTitle = document.getElementById('digital-title');
+            const displayView = document.getElementById('digital-display-view');
+            const inputView = document.getElementById('digital-input-view');
+            const buttonSection = document.getElementById('button-control-section');
+            const inputGuide = document.getElementById('input-mode-guide');
+
+            if (mode === 'clock') {
+                instruction.innerHTML = `<i class="fa-solid fa-arrows-spin text-sky-600 text-sm"></i><span>長針（青）をドラッグして、正解の時間にあわせよう！</span>`;
+                digitalTitle.textContent = "いま指している時間";
+                displayView.classList.remove('hidden');
+                inputView.classList.add('hidden');
+                buttonSection.classList.remove('hidden');
+                inputGuide.classList.add('hidden');
+            } else {
+                instruction.innerHTML = `<i class="fa-solid fa-pen-to-square text-sky-600 text-sm"></i><span>「▲ / ▼」ボタンを押して、こたえの時間を入力しよう！</span>`;
+                digitalTitle.textContent = "こたえを入力";
+                displayView.classList.add('hidden');
+                inputView.classList.remove('hidden');
+                buttonSection.classList.add('hidden');
+                inputGuide.classList.remove('hidden');
+            }
+            render();
+        }
+
+        function loadQuestion(index) {
+            currentQIndex = index;
+            const q = questionDatabase[currentLevel][currentQIndex];
+            document.getElementById('question-text').textContent = q.text;
+
+            totalMinutes = q.startH * 60 + q.startM;
+            startMinutes = totalMinutes;
+            targetAnswerMins = totalMinutes + q.delta;
+
+            // 数字入力モードの初期値もスタート時間に合わせる
+            inputHour = q.startH;
+            inputMin = q.startM;
+
+            render();
+        }
+
+        function nextQuestion() {
+            if (isAnimating) return;
+            const qList = questionDatabase[currentLevel];
+            loadQuestion((currentQIndex + 1) % qList.length);
+        }
+
+        function resetToStartQuestionTime() {
+            if (isAnimating) return;
+            const q = questionDatabase[currentLevel][currentQIndex];
+            totalMinutes = q.startH * 60 + q.startM;
+            startMinutes = totalMinutes;
+            inputHour = q.startH;
+            inputMin = q.startM;
+            render();
+        }
+
+        function adjustInputTime(deltaH, deltaM) {
+            initAudio();
+            inputHour += deltaH;
+            if (inputHour > 12) inputHour = 1;
+            if (inputHour < 1) inputHour = 12;
+
+            inputMin += deltaM;
+            if (inputMin >= 60) {
+                inputMin -= 60;
+                inputHour = (inputHour % 12) + 1;
+            }
+            if (inputMin < 0) {
+                inputMin += 60;
+                inputHour = (inputHour - 2 <= 0) ? inputHour - 2 + 12 : inputHour - 1;
+            }
+
+            // 数字入力に合わせて手回し時計側も連動更新
+            totalMinutes = inputHour * 60 + inputMin;
+            render();
+        }
+
+        function checkAnswer() {
+            let currentCheckMins = (answerMode === 'clock') ? totalMinutes : (inputHour * 60 + inputMin);
+
+            let normalizedCurrent = currentCheckMins % 720;
+            if (normalizedCurrent < 0) normalizedCurrent += 720;
+
+            let normalizedTarget = targetAnswerMins % 720;
+            if (normalizedTarget < 0) normalizedTarget += 720;
+
+            if (Math.abs(normalizedCurrent - normalizedTarget) < 1) {
+                isCorrectState = true;
+                playCorrectSound();
+                confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+
+                score++;
+                document.getElementById('score-count').textContent = score;
+                updateBadges();
+
+                showModal("🎉", "だいせいかい！", "すごいね！ぴったり合ってるよ！", "border-emerald-400", "bg-emerald-500 hover:bg-emerald-600", "つぎの問題へ ▶");
+            } else {
+                isCorrectState = false;
+                playIncorrectSound();
+                showModal("🤔", "おしい！", "時計や数直線を見ながら、もう一度あわせてみよう！", "border-amber-400", "bg-amber-500 hover:bg-amber-600", "もういちど挑戦！");
+            }
+        }
+
+        function showModal(icon, title, desc, borderColor, btnBgColor, btnText) {
+            const modal = document.getElementById('result-modal');
+            const card = document.getElementById('modal-card');
+            const btn = document.getElementById('modal-btn');
+
+            document.getElementById('modal-icon').textContent = icon;
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-desc').textContent = desc;
+
+            card.className = `bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border-4 ${borderColor} animate-modal`;
+            btn.className = `w-full py-3 ${btnBgColor} text-white font-black rounded-xl shadow-lg text-base transition-all active:scale-95`;
+            btn.textContent = btnText;
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeModalAndNext() {
+            document.getElementById('result-modal').classList.add('hidden');
+            if (isCorrectState) nextQuestion();
+        }
+
+        function updateBadges() {
+            if (score >= 1) document.getElementById('badge-1').classList.remove('badge-locked');
+            if (score >= 3) document.getElementById('badge-2').classList.remove('badge-locked');
+            if (score >= 5) document.getElementById('badge-3').classList.remove('badge-locked');
+        }
+
+        function setButtonsDisabled(disabled) {
+            isAnimating = disabled;
+            document.querySelectorAll('.action-btn').forEach(btn => btn.disabled = disabled);
+        }
+
+        function getAngleFromEvent(e) {
+            const rect = clockCanvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const x = clientX - (rect.left + rect.width / 2);
+            const y = clientY - (rect.top + rect.height / 2);
+            let angle = Math.atan2(y, x) + Math.PI / 2;
+            if (angle < 0) angle += 2 * Math.PI;
+            return angle;
+        }
+
+        function startDrag(e) {
+            if (isAnimating || answerMode === 'input') return;
+            initAudio();
+            e.preventDefault();
+            isDragging = true;
+            lastAngle = getAngleFromEvent(e);
+        }
+
+        function drag(e) {
+            if (!isDragging || isAnimating || answerMode === 'input') return;
+            e.preventDefault();
+
+            const currentAngle = getAngleFromEvent(e);
+            let diff = currentAngle - lastAngle;
+
+            if (diff > Math.PI) diff -= 2 * Math.PI;
+            if (diff < -Math.PI) diff += 2 * Math.PI;
+
+            totalMinutes += (diff / (2 * Math.PI)) * 60;
+            lastAngle = currentAngle;
+            render();
+        }
+
+        function endDrag() {
+            if (isDragging) {
+                isDragging = false;
+                totalMinutes = Math.round(totalMinutes);
+                render();
+            }
+        }
+
+        function animateAddMinutes(deltaMins) {
+            if (isAnimating || answerMode === 'input') return;
+            initAudio();
+            setButtonsDisabled(true);
+
+            const initialMins = totalMinutes;
+            const targetMins = totalMinutes + deltaMins;
+            const duration = 500;
+            const startTime = performance.now();
+
+            function step(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeOut = 1 - Math.pow(1 - progress, 3);
+
+                totalMinutes = initialMins + (targetMins - initialMins) * easeOut;
+                render();
+
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                } else {
+                    totalMinutes = targetMins;
+                    render();
+                    setButtonsDisabled(false);
+                }
+            }
+            requestAnimationFrame(step);
+        }
+
+        function render() {
+            let normalizedMins = totalMinutes % 720;
+            if (normalizedMins < 0) normalizedMins += 720;
+
+            let hours = Math.floor(normalizedMins / 60);
+            if (hours === 0) hours = 12;
+            let displayMins = Math.round(normalizedMins % 60);
+            if (displayMins === 60) displayMins = 0;
+
+            // デジタル表示の更新
+            document.getElementById('digital-hour').textContent = hours;
+            document.getElementById('digital-min').textContent = displayMins < 10 ? '0' + displayMins : displayMins;
+
+            // 数字入力UIの更新
+            inputHour = hours;
+            inputMin = displayMins;
+            document.getElementById('input-hour-text').textContent = inputHour;
+            document.getElementById('input-min-text').textContent = inputMin < 10 ? '0' + inputMin : inputMin;
+
+            drawClock(normalizedMins);
+            drawTimeline(totalMinutes, startMinutes);
+        }
+
+        // --- アナログ時計描画 ---
+        function drawClock(mins) {
+            clockCtx.clearRect(0, 0, clockCanvas.width, clockCanvas.height);
+            clockCtx.save();
+            clockCtx.translate(radius, radius);
+
+            // 扇形エリア
+            const diffMins = mins - (startMinutes % 720);
+            if (Math.abs(diffMins) > 0.1) {
+                const startAngle = ((startMinutes % 720) % 60) * (Math.PI / 30) - Math.PI / 2;
+                const endAngle = (mins % 60) * (Math.PI / 30) - Math.PI / 2;
+                const isBackward = diffMins < 0;
+
+                clockCtx.beginPath();
+                clockCtx.moveTo(0, 0);
+                clockCtx.arc(0, 0, radius - 16, startAngle, endAngle, isBackward);
+                clockCtx.closePath();
+                clockCtx.fillStyle = isBackward ? 'rgba(244, 63, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+                clockCtx.fill();
+            }
+
+            // 外枠
+            clockCtx.beginPath();
+            clockCtx.arc(0, 0, radius - 8, 0, 2 * Math.PI);
+            clockCtx.fillStyle = '#ffffff';
+            clockCtx.fill();
+            clockCtx.lineWidth = 4;
+            clockCtx.strokeStyle = '#0f172a';
+            clockCtx.stroke();
+
+            // 目盛り
+            for (let i = 0; i < 60; i++) {
+                const angle = (i * 6) * Math.PI / 180;
+                clockCtx.rotate(angle);
+                if (i % 5 === 0) {
+                    clockCtx.beginPath();
+                    clockCtx.moveTo(0, -(radius - 16));
+                    clockCtx.lineTo(0, -(radius - 10));
+                    clockCtx.lineWidth = 2;
+                    clockCtx.strokeStyle = '#0f172a';
+                    clockCtx.stroke();
+                } else {
+                    clockCtx.beginPath();
+                    clockCtx.moveTo(0, -(radius - 14));
+                    clockCtx.lineTo(0, -(radius - 11));
+                    clockCtx.lineWidth = 1;
+                    clockCtx.strokeStyle = '#94a3b8';
+                    clockCtx.stroke();
+                }
+                clockCtx.rotate(-angle);
+            }
+
+            // 数字
+            clockCtx.font = '800 16px "M PLUS Rounded 1c", sans-serif';
+            clockCtx.fillStyle = '#1e293b';
+            clockCtx.textBaseline = 'middle';
+            clockCtx.textAlign = 'center';
+
+            for (let num = 1; num <= 12; num++) {
+                const ang = num * Math.PI / 6;
+                const x = (radius - 28) * Math.sin(ang);
+                const y = -(radius - 28) * Math.cos(ang);
+                clockCtx.fillText(num.toString(), x, y);
+            }
+
+            const hourAngle = (mins / 60) * (Math.PI / 6);
+            const minuteAngle = (mins % 60) * (Math.PI / 30);
+
+            // 短針
+            clockCtx.save();
+            clockCtx.rotate(hourAngle);
+            clockCtx.beginPath();
+            clockCtx.moveTo(0, 6);
+            clockCtx.lineTo(0, -(radius - 60));
+            clockCtx.lineWidth = 6;
+            clockCtx.strokeStyle = '#f43f5e';
+            clockCtx.lineCap = 'round';
+            clockCtx.stroke();
+            clockCtx.restore();
+
+            // 長針
+            clockCtx.save();
+            clockCtx.rotate(minuteAngle);
+            clockCtx.beginPath();
+            clockCtx.moveTo(0, 10);
+            clockCtx.lineTo(0, -(radius - 26));
+            clockCtx.lineWidth = 4;
+            clockCtx.strokeStyle = '#3b82f6';
+            clockCtx.lineCap = 'round';
+            clockCtx.stroke();
+            
+            clockCtx.beginPath();
+            clockCtx.arc(0, -(radius - 26), 5, 0, 2 * Math.PI);
+            clockCtx.fillStyle = '#2563eb';
+            clockCtx.fill();
+            clockCtx.restore();
+
+            // 中心ピン
+            clockCtx.beginPath();
+            clockCtx.arc(0, 0, 6, 0, 2 * Math.PI);
+            clockCtx.fillStyle = '#0f172a';
+            clockCtx.fill();
+
+            clockCtx.restore();
+        }
+
+        // --- 数直線描画 ---
+        function drawTimeline(currentMins, startMins) {
+            const w = timelineCanvas.width;
+            const h = timelineCanvas.height;
+            timelineCtx.clearRect(0, 0, w, h);
+
+            const minutesWindow = 120;
+            const pxPerMin = w / minutesWindow;
+            const centerY = 38;
+
+            timelineCtx.beginPath();
+            timelineCtx.moveTo(0, centerY);
+            timelineCtx.lineTo(w, centerY);
+            timelineCtx.lineWidth = 3;
+            timelineCtx.strokeStyle = '#cbd5e1';
+            timelineCtx.stroke();
+
+            const minBound = currentMins - 60;
+            const maxBound = currentMins + 60;
+            const startTick = Math.floor(minBound / 5) * 5;
+
+            for (let m = startTick; m <= maxBound; m += 5) {
+                const x = (m - (currentMins - 60)) * pxPerMin;
+
+                if (m % 60 === 0) {
+                    timelineCtx.beginPath();
+                    timelineCtx.moveTo(x, centerY - 12);
+                    timelineCtx.lineTo(x, centerY + 12);
+                    timelineCtx.lineWidth = 2.5;
+                    timelineCtx.strokeStyle = '#0f172a';
+                    timelineCtx.stroke();
+
+                    let displayH = Math.floor((m / 60) % 12);
+                    if (displayH === 0) displayH = 12;
+                    timelineCtx.font = '800 12px "M PLUS Rounded 1c"';
+                    timelineCtx.fillStyle = '#0f172a';
+                    timelineCtx.textAlign = 'center';
+                    timelineCtx.fillText(`${displayH}:00`, x, centerY + 24);
+                } else if (m % 15 === 0) {
+                    timelineCtx.beginPath();
+                    timelineCtx.moveTo(x, centerY - 8);
+                    timelineCtx.lineTo(x, centerY + 8);
+                    timelineCtx.lineWidth = 1.5;
+                    timelineCtx.strokeStyle = '#64748b';
+                    timelineCtx.stroke();
+
+                    let minVal = Math.abs(m % 60);
+                    timelineCtx.font = '700 10px "M PLUS Rounded 1c"';
+                    timelineCtx.fillStyle = '#64748b';
+                    timelineCtx.textAlign = 'center';
+                    timelineCtx.fillText(`:${minVal}`, x, centerY + 20);
+                } else {
+                    timelineCtx.beginPath();
+                    timelineCtx.moveTo(x, centerY - 4);
+                    timelineCtx.lineTo(x, centerY + 4);
+                    timelineCtx.lineWidth = 1;
+                    timelineCtx.strokeStyle = '#94a3b8';
+                    timelineCtx.stroke();
+                }
+            }
+
+            const diff = currentMins - startMins;
+            if (Math.abs(diff) > 0.5) {
+                const startX = (startMins - (currentMins - 60)) * pxPerMin;
+                const currentX = w / 2;
+                const isBackward = diff < 0;
+                const barColor = isBackward ? 'rgba(244, 63, 94, 0.25)' : 'rgba(59, 130, 246, 0.25)';
+                const strokeColor = isBackward ? '#f43f5e' : '#3b82f6';
+
+                timelineCtx.fillStyle = barColor;
+                timelineCtx.fillRect(Math.min(startX, currentX), centerY - 10, Math.abs(startX - currentX), 20);
+
+                timelineCtx.beginPath();
+                timelineCtx.moveTo(startX, centerY - 15);
+                timelineCtx.lineTo(currentX, centerY - 15);
+                timelineCtx.lineWidth = 2.5;
+                timelineCtx.strokeStyle = strokeColor;
+                timelineCtx.stroke();
+
+                const arrowSize = 5;
+                timelineCtx.beginPath();
+                if (isBackward) {
+                    timelineCtx.moveTo(currentX, centerY - 15);
+                    timelineCtx.lineTo(currentX + arrowSize, centerY - 15 - arrowSize);
+                    timelineCtx.lineTo(currentX + arrowSize, centerY - 15 + arrowSize);
+                } else {
+                    timelineCtx.moveTo(currentX, centerY - 15);
+                    timelineCtx.lineTo(currentX - arrowSize, centerY - 15 - arrowSize);
+                    timelineCtx.lineTo(currentX - arrowSize, centerY - 15 + arrowSize);
+                }
+                timelineCtx.fillStyle = strokeColor;
+                timelineCtx.fill();
+
+                timelineCtx.font = '800 11px "M PLUS Rounded 1c"';
+                timelineCtx.fillStyle = strokeColor;
+                timelineCtx.textAlign = 'center';
+                const labelX = (startX + currentX) / 2;
+                timelineCtx.fillText(`${diff > 0 ? '+' : ''}${Math.round(diff)}分`, labelX, centerY - 20);
+            }
+
+            const centerX = w / 2;
+            timelineCtx.beginPath();
+            timelineCtx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+            timelineCtx.fillStyle = '#2563eb';
+            timelineCtx.fill();
+            timelineCtx.lineWidth = 2;
+            timelineCtx.strokeStyle = '#ffffff';
+            timelineCtx.stroke();
+
+            timelineCtx.beginPath();
+            timelineCtx.moveTo(centerX, centerY - 10);
+            timelineCtx.lineTo(centerX, centerY + 10);
+            timelineCtx.lineWidth = 2;
+            timelineCtx.strokeStyle = '#2563eb';
+            timelineCtx.stroke();
+        }
+    </script>
+</body>
+</html>
